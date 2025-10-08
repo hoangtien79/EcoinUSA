@@ -1,120 +1,133 @@
-// SPDX-License-Identifier: MIT
-pragma solidity >=0.8.0 <9.1.5;
+# Funbuy Token
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+This repository contains the Funbuy ERC-20 token contract (`contracts/FunbuyToken.sol`).
+The steps below walk you through deploying the token to Ethereum (or any EVM
+network) and then listing it for trading on Uniswap.
 
-contract ECoin is ERC20, Ownable, ReentrancyGuard, Pausable {
-    // Total supply of the token
-    uint256 private constant INITIAL_SUPPLY = 1000000000000 * 10**decimals(); // 1 trillion tokens
+## 1. Deploy the contract with Remix
 
-    struct Stake {
-        uint256 amount;
-        uint256 timestamp;
-        uint256 rewards;
-    }
+1. Go to [https://remix.ethereum.org](https://remix.ethereum.org) and create a new
+   file named `FunbuyToken.sol`. Paste in the contents of
+   [`contracts/FunbuyToken.sol`](contracts/FunbuyToken.sol).
+2. On the **Solidity Compiler** tab select compiler version `0.8.20` (or any
+   0.8.20+ build) and click **Compile FunbuyToken.sol**.
+3. Switch to the **Deploy & Run** tab.
+   - Environment: `Injected Provider - Metamask` (or another wallet provider)
+   - Account: the wallet that should receive the initial supply.
+   - Contract: `FunbuyToken`.
+4. Click **Deploy** and confirm the transaction in your wallet. The deploying
+   wallet receives the full `1_260_000_000 * 10^18` FUNBUY supply.
+5. After confirmation, copy the deployed contract address from Remix or from your
+   wallet's transaction history.
 
-    // Mapping to store staking information per user
-    mapping(address => Stake) public stakes;
+## 2. Deploy with Hardhat (alternative CLI workflow)
 
-    // Reward rate (1 token for every 1 million tokens staked per hour)
-    uint256 public constant REWARD_RATE = 1 * 10**decimals() / 1_000_000; // 1 token per hour for 1 million staked
+1. Install dependencies in an empty folder:
 
-    // Events
-    event Staked(address indexed user, uint256 amount);
-    event Unstaked(address indexed user, uint256 amount);
-    event RewardsClaimed(address indexed user, uint256 amount);
+   ```bash
+   npm init -y
+   npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox dotenv
+   npx hardhat
+   ```
 
-    // Constructor to initialize the token with the total supply
-    constructor() ERC20("ECoin", "ECN") {
-        _mint(msg.sender, INITIAL_SUPPLY); // Mint the total supply to the deployer's address
-    }
+   When prompted, choose the **JavaScript project** template and let Hardhat
+   install the sample files.
 
-    // Function to stake tokens
-    function stake(uint256 amount) public nonReentrant whenNotPaused {
-        require(amount > 0, "Amount should be greater than 0");
-        require(balanceOf(msg.sender) >= amount, "Insufficient balance to stake");
+2. Replace the contents of `contracts/Lock.sol` with the contents of
+   [`contracts/FunbuyToken.sol`](contracts/FunbuyToken.sol).
+3. Create `.env` and store your RPC URL and deployer private key:
 
-        // Update rewards before staking
-        updateRewards(msg.sender);
+   ```dotenv
+   RPC_URL="https://mainnet.infura.io/v3/<project-id>"
+   PRIVATE_KEY="0x..."
+   ```
 
-        // Transfer tokens to the contract for staking
-        _transfer(msg.sender, address(this), amount);
+4. Update `hardhat.config.js` to use the network you plan to deploy to:
 
-        // Update staking information
-        Stake storage userStake = stakes[msg.sender];
-        userStake.amount += amount;
-        userStake.timestamp = block.timestamp;
+   ```js
+   require("@nomicfoundation/hardhat-toolbox");
+   require("dotenv").config();
 
-        emit Staked(msg.sender, amount); // Emit Staked event
-    }
+   const { RPC_URL, PRIVATE_KEY } = process.env;
 
-    // Unstaking function
-    function unstake(uint256 amount) public nonReentrant whenNotPaused {
-        Stake storage userStake = stakes[msg.sender];
-        require(userStake.amount >= amount, "Insufficient staked balance to unstake");
+   module.exports = {
+     solidity: "0.8.20",
+     networks: {
+       mainnet: {
+         url: RPC_URL,
+         accounts: [PRIVATE_KEY],
+       },
+     },
+   };
+   ```
 
-        // Update rewards before unstaking
-        updateRewards(msg.sender);
+5. Add a deploy script `scripts/deploy.js`:
 
-        // Transfer staked tokens back to the user
-        userStake.amount -= amount;
-        _transfer(address(this), msg.sender, amount);
+   ```js
+   const hre = require("hardhat");
 
-        emit Unstaked(msg.sender, amount); // Emit Unstaked event
-    }
+   async function main() {
+     const FunbuyToken = await hre.ethers.getContractFactory("FunbuyToken");
+     const token = await FunbuyToken.deploy();
 
-    // Update rewards for a user
-    function updateRewards(address user) internal {
-        Stake storage userStake = stakes[user];
+     await token.waitForDeployment();
+     console.log("FunbuyToken deployed to:", await token.getAddress());
+   }
 
-        // Calculate how many hours have passed since the last update
-        uint256 hoursPassed = (block.timestamp - userStake.timestamp) / 1 hours;
+   main().catch((error) => {
+     console.error(error);
+     process.exitCode = 1;
+   });
+   ```
 
-        // Calculate the rewards earned
-        if (userStake.amount > 0 && hoursPassed > 0) {
-            // Rewards based on the amount staked and hours passed
-            uint256 earnedRewards = (userStake.amount * REWARD_RATE * hoursPassed) / 10**decimals();
-            userStake.rewards += earnedRewards;
-            userStake.timestamp = block.timestamp; // Reset the timestamp
-        }
-    }
+6. Deploy:
 
-    // Claim rewards function
-    function claimRewards() public nonReentrant whenNotPaused {
-        updateRewards(msg.sender); // Update rewards before claiming
+   ```bash
+   npx hardhat run scripts/deploy.js --network mainnet
+   ```
 
-        Stake storage userStake = stakes[msg.sender];
-        uint256 rewardsToClaim = userStake.rewards;
-        require(rewardsToClaim > 0, "No rewards to claim");
+   The command prints the contract address once the transaction is mined.
 
-        // Reset the rewards to zero and transfer the rewards to the user
-        userStake.rewards = 0;
-        _mint(msg.sender, rewardsToClaim); // Mint new tokens as rewards
+## 3. Verify the contract (optional but recommended)
 
-        emit RewardsClaimed(msg.sender, rewardsToClaim); // Emit RewardsClaimed event
-    }
+Verification lets explorers such as Etherscan show the source code.
 
-    // Function to view staked amount
-    function stakedAmount(address account) public view returns (uint256) {
-        return stakes[account].amount;
-    }
+- **Remix:** use the "Publish on verification services" checkbox when deploying,
+  or verify later on Etherscan by pasting the flattened source code.
+- **Hardhat:** install `@nomicfoundation/hardhat-verify` and run
+  `npx hardhat verify <contract-address>`.
 
-    // Function to view rewards
-    function viewRewards(address account) public view returns (uint256) {
-        return stakes[account].rewards;
-    }
+## 4. Add the token to your wallet
 
-    // Enable or disable contract functions (Pausable)
-    function pause() external onlyOwner {
-        _pause();
-    }
+In MetaMask (or your preferred wallet) choose **Import Tokens** and paste the
+contract address. The wallet reads the token name, symbol, and decimals
+automatically.
 
-    function unpause() external onlyOwner {
-        _unpause();
-    }
+## 5. List on Uniswap
 
-    // Transfer functions are inherited from ERC20
-}
+1. Go to the Uniswap interface (e.g. [https://app.uniswap.org](https://app.uniswap.org)).
+2. Connect the same wallet that holds the initial FUNBUY supply.
+3. Choose **Pool → New Position** (for v3) or **+ New Position** depending on the
+   interface version.
+4. In the token selector paste the FUNBUY contract address and click **Import**.
+5. Select the pair token (e.g. WETH or USDC) and choose your price range / fee tier.
+6. Enter the amount of FUNBUY and the paired asset you want to deposit, approve
+   the tokens, then supply liquidity.
+
+After liquidity is added, the token becomes tradable on Uniswap. Anyone can swap
+by importing the contract address in the token selector.
+
+## Troubleshooting
+
+- Confirm the deployer's wallet has enough ETH for gas.
+- Ensure you are using the correct network (testnet vs mainnet) consistently
+  across Remix/Hardhat, your wallet, and Uniswap.
+- If a deployment fails with `insufficient funds`, increase the gas limit or gas
+  price.
+
+## Additional resources
+
+- [Ethereum Remix documentation](https://remix-ide.readthedocs.io)
+- [Hardhat getting started guide](https://hardhat.org/tutorial)
+- [Uniswap support docs](https://support.uniswap.org)
+
