@@ -1,28 +1,54 @@
 # Funbuy Token
 
-This repository contains the Funbuy ERC-20 token contract (`contracts/FunbuyToken.sol`).
-The steps below walk you through deploying the token to Ethereum (or any EVM
-network) and then listing it for trading on Uniswap.
+`FunbuyToken.sol` implements a fixed-supply ERC-20 token with the following
+parameters:
 
-## 1. Deploy the contract with Remix
+| Property   | Value                          |
+| ---------- | ------------------------------ |
+| Name       | `Funbuy`                       |
+| Symbol     | `FUNBUY`                       |
+| Decimals   | `18`                           |
+| Total Supply | `1,260,000,000 FUNBUY` (minted to the deployer) |
 
-1. Go to [https://remix.ethereum.org](https://remix.ethereum.org) and create a new
-   file named `FunbuyToken.sol`. Paste in the contents of
-   [`contracts/FunbuyToken.sol`](contracts/FunbuyToken.sol).
-2. On the **Solidity Compiler** tab select compiler version `0.8.20` (or any
-   0.8.20+ build) and click **Compile FunbuyToken.sol**.
-3. Switch to the **Deploy & Run** tab.
-   - Environment: `Injected Provider - Metamask` (or another wallet provider)
-   - Account: the wallet that should receive the initial supply.
-   - Contract: `FunbuyToken`.
-4. Click **Deploy** and confirm the transaction in your wallet. The deploying
-   wallet receives the full `1_260_000_000 * 10^18` FUNBUY supply.
-5. After confirmation, copy the deployed contract address from Remix or from your
-   wallet's transaction history.
+The sections below describe how to deploy the contract, confirm the supply, and
+list the token on Uniswap so it can be traded from your application.
 
-## 2. Deploy with Hardhat (alternative CLI workflow)
+## Before you start
 
-1. Install dependencies in an empty folder:
+- Install [MetaMask](https://metamask.io/) (or another Web3 wallet) and fund the
+  deployment account with enough ETH to cover gas.
+- Decide which EVM network you want to deploy to (e.g. Ethereum mainnet,
+  Sepolia, Polygon, BNB Chain) and use the matching RPC URL in every step.
+- If you prefer a command-line workflow, make sure Node.js 18+ and npm are
+  installed.
+
+## 1. Deploy with Remix (browser workflow)
+
+1. Open [https://remix.ethereum.org](https://remix.ethereum.org) and create a new
+   file named `FunbuyToken.sol`.
+2. Copy the contents of
+   [`contracts/FunbuyToken.sol`](contracts/FunbuyToken.sol) into the new file.
+3. In the **Solidity Compiler** tab select version `0.8.20` (or any 0.8.20+
+   release) and press **Compile FunbuyToken.sol**.
+4. Switch to the **Deploy & Run** tab and configure:
+   - **Environment:** `Injected Provider - MetaMask` (or your wallet provider)
+   - **Account:** the wallet that should receive the entire supply
+   - **Contract:** `FunbuyToken`
+5. Click **Deploy** and confirm the transaction in your wallet. Once mined, the
+   deployer address holds the full `1,260,000,000 * 10^18` FUNBUY balance.
+6. Copy the deployed contract address from Remix or the transaction receipt and
+   save it—this is the address you will share with wallets, explorers, and
+   Uniswap.
+
+### Confirm the minted supply
+
+After deployment, expand the contract instance in Remix and read the `totalSupply`
+and `balanceOf(deployer)` values. They should both return
+`1260000000000000000000000000`, which is `1,260,000,000` FUNBUY with 18 decimals.
+
+## 2. Deploy with Hardhat (CLI workflow)
+
+1. Create an empty folder and install the dependencies:
 
    ```bash
    npm init -y
@@ -31,18 +57,19 @@ network) and then listing it for trading on Uniswap.
    ```
 
    When prompted, choose the **JavaScript project** template and let Hardhat
-   install the sample files.
+   write the starter files.
 
-2. Replace the contents of `contracts/Lock.sol` with the contents of
+2. Replace `contracts/Lock.sol` with the contents of
    [`contracts/FunbuyToken.sol`](contracts/FunbuyToken.sol).
-3. Create `.env` and store your RPC URL and deployer private key:
+
+3. Create `.env` and add your RPC URL and private key (never commit this file):
 
    ```dotenv
    RPC_URL="https://mainnet.infura.io/v3/<project-id>"
-   PRIVATE_KEY="0x..."
+   PRIVATE_KEY="0xYOUR_PRIVATE_KEY"
    ```
 
-4. Update `hardhat.config.js` to use the network you plan to deploy to:
+4. Update `hardhat.config.js`:
 
    ```js
    require("@nomicfoundation/hardhat-toolbox");
@@ -55,7 +82,7 @@ network) and then listing it for trading on Uniswap.
      networks: {
        mainnet: {
          url: RPC_URL,
-         accounts: [PRIVATE_KEY],
+         accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
        },
      },
    };
@@ -69,8 +96,8 @@ network) and then listing it for trading on Uniswap.
    async function main() {
      const FunbuyToken = await hre.ethers.getContractFactory("FunbuyToken");
      const token = await FunbuyToken.deploy();
-
      await token.waitForDeployment();
+
      console.log("FunbuyToken deployed to:", await token.getAddress());
    }
 
@@ -80,54 +107,73 @@ network) and then listing it for trading on Uniswap.
    });
    ```
 
-6. Deploy:
+6. Deploy (replace `mainnet` with your desired network key):
 
    ```bash
    npx hardhat run scripts/deploy.js --network mainnet
    ```
 
-   The command prints the contract address once the transaction is mined.
+7. After the transaction is confirmed, record the address printed in the
+   terminal and verify the deployer balance with `npx hardhat console` if
+   desired:
 
-## 3. Verify the contract (optional but recommended)
+   ```bash
+   npx hardhat console --network mainnet
+   > const token = await ethers.getContractAt("FunbuyToken", "<contract-address>");
+   > (await token.totalSupply()).toString();
+   > (await token.balanceOf("<deployer-address>")).toString();
+   ```
 
-Verification lets explorers such as Etherscan show the source code.
+## 3. Verify the contract (recommended)
 
-- **Remix:** use the "Publish on verification services" checkbox when deploying,
-  or verify later on Etherscan by pasting the flattened source code.
-- **Hardhat:** install `@nomicfoundation/hardhat-verify` and run
-  `npx hardhat verify <contract-address>`.
+Contract verification lets explorers display the source code and ABI.
 
-## 4. Add the token to your wallet
+- **Remix:** check **Publish on verification services** during deployment or use
+  the **Sourcify / Etherscan** plugin afterward.
+- **Hardhat:** install the verify plugin and run the command with the compiler
+  arguments used during deployment:
 
-In MetaMask (or your preferred wallet) choose **Import Tokens** and paste the
-contract address. The wallet reads the token name, symbol, and decimals
-automatically.
+  ```bash
+  npm install --save-dev @nomicfoundation/hardhat-verify
+  npx hardhat verify --network mainnet <contract-address>
+  ```
 
-## 5. List on Uniswap
+## 4. Import the token in your wallet
 
-1. Go to the Uniswap interface (e.g. [https://app.uniswap.org](https://app.uniswap.org)).
-2. Connect the same wallet that holds the initial FUNBUY supply.
-3. Choose **Pool → New Position** (for v3) or **+ New Position** depending on the
-   interface version.
-4. In the token selector paste the FUNBUY contract address and click **Import**.
-5. Select the pair token (e.g. WETH or USDC) and choose your price range / fee tier.
-6. Enter the amount of FUNBUY and the paired asset you want to deposit, approve
-   the tokens, then supply liquidity.
+In MetaMask (or your preferred wallet) click **Import Tokens**, paste the
+contract address, and approve. The wallet auto-fills the name, symbol, and
+decimals from the chain.
 
-After liquidity is added, the token becomes tradable on Uniswap. Anyone can swap
-by importing the contract address in the token selector.
+## 5. Add liquidity on Uniswap
 
-## Troubleshooting
+1. Visit [https://app.uniswap.org](https://app.uniswap.org) and connect the
+   deployer wallet.
+2. Navigate to **Pool → New Position** (Uniswap v3) or **Pool → + New Position**.
+3. Paste the FUNBUY contract address, accept the import warning, and choose the
+   asset you want to pair with (WETH, USDC, etc.).
+4. Set your fee tier and price range (v3) or choose the appropriate pool type.
+5. Approve the FUNBUY and pair token if prompted, then supply the amounts you
+   want to seed as initial liquidity.
 
-- Confirm the deployer's wallet has enough ETH for gas.
-- Ensure you are using the correct network (testnet vs mainnet) consistently
-  across Remix/Hardhat, your wallet, and Uniswap.
-- If a deployment fails with `insufficient funds`, increase the gas limit or gas
-  price.
+Once liquidity is deposited, your token becomes discoverable on Uniswap. Share
+the contract address with users so they can import the token in the swap
+interface.
+
+## Troubleshooting checklist
+
+- Ensure the deployer wallet has enough native tokens for gas (deployment,
+  approvals, and liquidity supply each cost gas).
+- Verify that every tool (Remix/Hardhat, wallet, Uniswap) is pointed to the same
+  network.
+- If a transaction fails with `insufficient funds`, try raising the gas limit or
+  fee. For persistent failures, inspect the transaction in a block explorer for
+  detailed error messages.
+- If Uniswap cannot find the token, double-check that you are using the correct
+  contract address and that the deployment is confirmed on the network.
 
 ## Additional resources
 
-- [Ethereum Remix documentation](https://remix-ide.readthedocs.io)
-- [Hardhat getting started guide](https://hardhat.org/tutorial)
-- [Uniswap support docs](https://support.uniswap.org)
+- [Remix documentation](https://remix-ide.readthedocs.io)
+- [Hardhat guides](https://hardhat.org/tutorial)
+- [Uniswap help center](https://support.uniswap.org)
 
