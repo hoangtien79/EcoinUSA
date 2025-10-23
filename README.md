@@ -1,120 +1,88 @@
-// SPDX-License-Identifier: MIT
-pragma solidity >=0.8.0 <9.1.5;
+# GoldenAge (GA)
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+GoldenAge combines an ERC-20 staking token with a lightweight blockchain
+prototype that you can run from the terminal. The Solidity contract powers the
+tokenomics, while the Python CLI demonstrates the foundational building blocks
+of a public chain.
 
-contract ECoin is ERC20, Ownable, ReentrancyGuard, Pausable {
-    // Total supply of the token
-    uint256 private constant INITIAL_SUPPLY = 1000000000000 * 10**decimals(); // 1 trillion tokens
+## Features
 
-    struct Stake {
-        uint256 amount;
-        uint256 timestamp;
-        uint256 rewards;
-    }
+- **Initial supply:** 1,000,000,000,000 GA minted to the deployer on deployment.
+- **Staking:** Users can deposit GA into the contract to begin earning rewards.
+- **Rewards:** Every 1,000,000 GA staked earns 1 GA per hour, compounded when
+  rewards are claimed or additional tokens are staked/unstaked.
+- **Pausable:** The owner can pause or unpause staking-related functions.
+- **Secure by design:** Uses OpenZeppelin implementations for ERC20, Ownable,
+  ReentrancyGuard, and Pausable.
 
-    // Mapping to store staking information per user
-    mapping(address => Stake) public stakes;
+## Contract location
 
-    // Reward rate (1 token for every 1 million tokens staked per hour)
-    uint256 public constant REWARD_RATE = 1 * 10**decimals() / 1_000_000; // 1 token per hour for 1 million staked
+The Solidity source code is available in [`contracts/GoldenAge.sol`](contracts/GoldenAge.sol).
 
-    // Events
-    event Staked(address indexed user, uint256 amount);
-    event Unstaked(address indexed user, uint256 amount);
-    event RewardsClaimed(address indexed user, uint256 amount);
+## Development
 
-    // Constructor to initialize the token with the total supply
-    constructor() ERC20("ECoin", "ECN") {
-        _mint(msg.sender, INITIAL_SUPPLY); // Mint the total supply to the deployer's address
-    }
+1. Install dependencies in your Hardhat/Foundry project that references this
+   contract:
 
-    // Function to stake tokens
-    function stake(uint256 amount) public nonReentrant whenNotPaused {
-        require(amount > 0, "Amount should be greater than 0");
-        require(balanceOf(msg.sender) >= amount, "Insufficient balance to stake");
+   ```bash
+   npm install @openzeppelin/contracts
+   ```
 
-        // Update rewards before staking
-        updateRewards(msg.sender);
+2. Import and compile the contract as part of your deployment scripts.
 
-        // Transfer tokens to the contract for staking
-        _transfer(msg.sender, address(this), amount);
+3. Deploy the contract with your preferred tooling. The deployer will receive
+   the entire initial supply.
 
-        // Update staking information
-        Stake storage userStake = stakes[msg.sender];
-        userStake.amount += amount;
-        userStake.timestamp = block.timestamp;
+4. Interact with the staking functions (`stake`, `unstake`, and `claimRewards`)
+   to manage locked balances and earned rewards.
 
-        emit Staked(msg.sender, amount); // Emit Staked event
-    }
+## Terminal blockchain prototype
 
-    // Unstaking function
-    function unstake(uint256 amount) public nonReentrant whenNotPaused {
-        Stake storage userStake = stakes[msg.sender];
-        require(userStake.amount >= amount, "Insufficient staked balance to unstake");
+The `blockchain/goldenage_blockchain.py` module implements a self-contained
+GoldenAge blockchain you can explore locally. It persists chain data to the
+`goldenage_chain.json` file in the project root and exposes a CLI for common
+operations.
 
-        // Update rewards before unstaking
-        updateRewards(msg.sender);
+### Prerequisites
 
-        // Transfer staked tokens back to the user
-        userStake.amount -= amount;
-        _transfer(address(this), msg.sender, amount);
+- Python 3.9+
 
-        emit Unstaked(msg.sender, amount); // Emit Unstaked event
-    }
+### Usage
 
-    // Update rewards for a user
-    function updateRewards(address user) internal {
-        Stake storage userStake = stakes[user];
+1. Initialize the chain (creates the genesis block and saves the chain file):
 
-        // Calculate how many hours have passed since the last update
-        uint256 hoursPassed = (block.timestamp - userStake.timestamp) / 1 hours;
+   ```bash
+   python blockchain/goldenage_blockchain.py init
+   ```
 
-        // Calculate the rewards earned
-        if (userStake.amount > 0 && hoursPassed > 0) {
-            // Rewards based on the amount staked and hours passed
-            uint256 earnedRewards = (userStake.amount * REWARD_RATE * hoursPassed) / 10**decimals();
-            userStake.rewards += earnedRewards;
-            userStake.timestamp = block.timestamp; // Reset the timestamp
-        }
-    }
+2. Queue transactions prior to mining:
 
-    // Claim rewards function
-    function claimRewards() public nonReentrant whenNotPaused {
-        updateRewards(msg.sender); // Update rewards before claiming
+   ```bash
+   python blockchain/goldenage_blockchain.py add-tx alice bob 250
+   ```
 
-        Stake storage userStake = stakes[msg.sender];
-        uint256 rewardsToClaim = userStake.rewards;
-        require(rewardsToClaim > 0, "No rewards to claim");
+3. Mine a block to confirm queued transactions and collect the block reward:
 
-        // Reset the rewards to zero and transfer the rewards to the user
-        userStake.rewards = 0;
-        _mint(msg.sender, rewardsToClaim); // Mint new tokens as rewards
+   ```bash
+   python blockchain/goldenage_blockchain.py mine miner1
+   ```
 
-        emit RewardsClaimed(msg.sender, rewardsToClaim); // Emit RewardsClaimed event
-    }
+4. View the complete chain state:
 
-    // Function to view staked amount
-    function stakedAmount(address account) public view returns (uint256) {
-        return stakes[account].amount;
-    }
+   ```bash
+   python blockchain/goldenage_blockchain.py status
+   ```
 
-    // Function to view rewards
-    function viewRewards(address account) public view returns (uint256) {
-        return stakes[account].rewards;
-    }
+5. Validate the chain integrity:
 
-    // Enable or disable contract functions (Pausable)
-    function pause() external onlyOwner {
-        _pause();
-    }
+   ```bash
+   python blockchain/goldenage_blockchain.py validate
+   ```
 
-    function unpause() external onlyOwner {
-        _unpause();
-    }
+These commands illustrate the essential lifecycle of a blockchain: creating a
+genesis block, propagating transactions, mining new blocks, and maintaining
+consensus through validation.
 
-    // Transfer functions are inherited from ERC20
-}
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE).
